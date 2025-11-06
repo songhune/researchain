@@ -1,6 +1,8 @@
 # Core dependencies
 langchain>=0.3.0
 langchain-openai>=0.2.0
+langchain-community>=0.3.0
+langgraph>=0.2.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
 
@@ -13,6 +15,7 @@ pymupdf>=1.23.0
 
 # Optional providers
 langchain-anthropic>=0.3.0
+langchain-perplexity
 
 # Development tools (optional)
 jupyter>=1.0.0

@@ -240,14 +240,28 @@ class BibTeXWriter:
         filename = f"papers_{timestamp}.bib"
         filepath = os.path.join(self.output_dir, filename)
 
-        # 모든 결과에서 텍스트 추출
-        full_text = ""
-        for result in results:
-            content = result.get('content', '')
-            full_text += content + "\n"
+        # ToolMessage(Arxiv 원본)를 우선적으로 추출
+        tool_messages = []
+        other_messages = []
 
-        # 논문 정보 추출
-        papers = self.extract_papers_from_text(full_text)
+        for result in results:
+            if result.get('type') == 'ToolMessage':
+                tool_messages.append(result.get('content', ''))
+            else:
+                other_messages.append(result.get('content', ''))
+
+        # 1순위: ToolMessage에서 논문 정보 추출 (Arxiv 원본 데이터)
+        papers = []
+        if tool_messages:
+            print("[BibTeX] ToolMessage(Arxiv 원본)에서 논문 정보 추출 중...")
+            for tool_content in tool_messages:
+                papers.extend(self.extract_papers_from_text(tool_content))
+
+        # 2순위: 다른 메시지에서 추가 추출 (ToolMessage에서 실패한 경우)
+        if not papers and other_messages:
+            print("[BibTeX] 다른 메시지에서 논문 정보 추출 시도 중...")
+            for content in other_messages:
+                papers.extend(self.extract_papers_from_text(content))
 
         if not papers:
             print("추출된 논문이 없습니다.")
@@ -367,15 +381,31 @@ class PDFDownloader:
         Returns:
             다운로드된 PDF 파일 경로 리스트
         """
-        # 모든 결과에서 텍스트 추출
-        full_text = ""
-        for result in results:
-            content = result.get('content', '')
-            full_text += content + "\n"
+        # ToolMessage(Arxiv 원본)를 우선적으로 추출
+        tool_messages = []
+        other_messages = []
 
-        # Arxiv ID 추출
+        for result in results:
+            if result.get('type') == 'ToolMessage':
+                tool_messages.append(result.get('content', ''))
+            else:
+                other_messages.append(result.get('content', ''))
+
+        # Arxiv ID 추출 패턴
         arxiv_pattern = r'https?://arxiv\.org/abs/([^\s\)]+)'
-        arxiv_ids = re.findall(arxiv_pattern, full_text)
+        arxiv_ids = []
+
+        # 1순위: ToolMessage에서 Arxiv ID 추출 (원본 데이터)
+        if tool_messages:
+            print("[PDF] ToolMessage(Arxiv 원본)에서 URL 추출 중...")
+            for tool_content in tool_messages:
+                arxiv_ids.extend(re.findall(arxiv_pattern, tool_content))
+
+        # 2순위: 다른 메시지에서 추가 추출
+        if not arxiv_ids and other_messages:
+            print("[PDF] 다른 메시지에서 URL 추출 시도 중...")
+            for content in other_messages:
+                arxiv_ids.extend(re.findall(arxiv_pattern, content))
 
         # 중복 제거
         arxiv_ids = list(set(arxiv_ids))

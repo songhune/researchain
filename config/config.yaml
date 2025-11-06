@@ -18,30 +18,31 @@ system_prompt:
 
 # LLM Model Configuration
 llm:
-  # OpenAI Models
-  model: "gpt-4o"
-  model_provider: "openai"
+  # OpenAI Models (Tool calling 지원 ✅)
+  #model: "gpt-4o"
+  #model_provider: "openai"
+
   # model: "gpt-4"
   # model: "gpt-3.5-turbo"
 
-  # Anthropic Models
+  # Anthropic Models (Tool calling 지원 ✅)
   # model: "claude-3-5-sonnet-20241022"
   # model_provider: "anthropic"
   # model: "claude-3-opus-20240229"
   # model: "claude-3-sonnet-20240229"
 
-  # Perplexity Models
-  # model: "llama-3.1-sonar-large-128k-online"
-  # model_provider: "perplexity"
+  # Perplexity Models (Tool calling 미지원 - 폴백 모드로 자동 작동 ✅)
+  model: "sonar-pro"
+  model_provider: "perplexity"
   # model: "llama-3.1-sonar-small-128k-online"
 
-  temperature: 0.7
+  temperature: 0.3
   timeout: 30
   max_tokens: 2000
 
 # Arxiv Tool Configuration
 arxiv:
-  page_size: 5
+  page_size: 10
   delay_seconds: 3
   num_retries: 3
   max_results: 5

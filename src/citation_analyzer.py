@@ -3,16 +3,17 @@ Citation Chain Analyzer
 PDF에서 인용 정보를 추출하고 체인 분석
 마크다운 및 BibTeX 출력 지원
 재귀적 citation chain 분석 지원
+LangChain ArxivLoader 활용
 """
 
 import os
 import re
-import arxiv
 from typing import Dict, List, Tuple, Set
 from datetime import datetime
 from langchain.tools import tool
 from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
+from langchain_community.document_loaders import ArxivLoader
 from pypdf import PdfReader
 
 
@@ -29,16 +30,34 @@ class CitationChainAnalyzer:
         self.config = config
         self.llm = self._initialize_llm()
 
+        # 모델 provider 확인 (tool calling 지원 여부)
+        model_provider = self.config['llm'].get('model_provider', '').lower()
+        self.use_tools = model_provider not in ['perplexity']
+
     def _initialize_llm(self):
         """LLM 초기화"""
         llm_config = self.config['llm']
-        return init_chat_model(
-            model=llm_config['model'],
-            model_provider=llm_config['model_provider'],
-            temperature=llm_config['temperature'],
-            timeout=llm_config['timeout'],
-            max_tokens=llm_config['max_tokens']
-        )
+        model_provider = llm_config['model_provider'].lower()
+
+        # Perplexity는 init_chat_model이 API 키를 제대로 인식하지 못하므로 직접 초기화
+        if model_provider == 'perplexity':
+            from langchain_perplexity import ChatPerplexity
+
+            # PPLX_API_KEY 환경 변수에서 자동 로드
+            return ChatPerplexity(
+                model=llm_config['model'],
+                temperature=llm_config['temperature'],
+                request_timeout=llm_config['timeout'],
+                max_tokens=llm_config['max_tokens']
+            )
+        else:
+            return init_chat_model(
+                model=llm_config['model'],
+                model_provider=llm_config['model_provider'],
+                temperature=llm_config['temperature'],
+                timeout=llm_config['timeout'],
+                max_tokens=llm_config['max_tokens']
+            )
 
     def extract_citations_from_pdf(self, pdf_path: str) -> List[str]:
         """
@@ -133,31 +152,67 @@ class CitationChainAnalyzer:
 
 결과를 마크다운 형식으로 구조화하여 제공하세요."""
 
+        # Tool calling 미지원 모델인 경우
+        if not self.use_tools:
+            print("[Tool calling 미지원] 직접 LLM 호출 모드")
+            citations_text = "\n".join(citations)
+            full_prompt = f"""{system_prompt}
+
+인용 목록:
+{citations_text}
+
+다음 PDF의 인용 정보를 분석해주세요: {os.path.basename(pdf_path)}"""
+
+            response = self.llm.invoke(full_prompt)
+            return response.content
+
+        # Tool calling 지원 모델인 경우
         @tool
         def get_citations() -> str:
             """인용 목록을 반환합니다."""
             return "\n".join(citations)
 
-        agent = create_agent(
-            model=self.llm,
-            tools=[get_citations],
-            system_prompt=system_prompt
-        )
+        try:
+            agent = create_react_agent(
+                self.llm,
+                [get_citations]
+            )
 
-        # 에이전트 실행
-        query = f"다음 PDF의 인용 정보를 분석해주세요: {os.path.basename(pdf_path)}"
+            # 에이전트 실행
+            query = f"다음 PDF의 인용 정보를 분석해주세요: {os.path.basename(pdf_path)}"
 
-        results = []
-        for chunk in agent.stream(
-            {"messages": [("user", query)]},
-            stream_mode="values"
-        ):
-            if "messages" in chunk and chunk["messages"]:
-                last_message = chunk["messages"][-1]
-                if hasattr(last_message, "content"):
-                    results.append(last_message.content)
+            # system prompt를 메시지에 포함
+            from langchain_core.messages import SystemMessage, HumanMessage
 
-        return results[-1] if results else "분석 실패"
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=query)
+            ]
+
+            results = []
+            for chunk in agent.stream(
+                {"messages": messages},
+                stream_mode="values"
+            ):
+                if "messages" in chunk and chunk["messages"]:
+                    last_message = chunk["messages"][-1]
+                    if hasattr(last_message, "content"):
+                        results.append(last_message.content)
+
+            return results[-1] if results else "분석 실패"
+        except NotImplementedError:
+            # bind_tools 미지원 시 폴백
+            print("[Tool calling 실패] 직접 LLM 호출로 폴백")
+            citations_text = "\n".join(citations)
+            full_prompt = f"""{system_prompt}
+
+인용 목록:
+{citations_text}
+
+다음 PDF의 인용 정보를 분석해주세요: {os.path.basename(pdf_path)}"""
+
+            response = self.llm.invoke(full_prompt)
+            return response.content
 
     def extract_citation_metadata(self, citations: List[str]) -> List[Dict]:
         """
@@ -382,47 +437,60 @@ class CitationChainAnalyzer:
 
         return titles
 
-    def search_arxiv_by_title(self, title: str, max_results: int = 1) -> List[arxiv.Result]:
+    def search_arxiv_by_title(self, title: str, max_results: int = 1) -> List[Dict]:
         """
-        Arxiv에서 제목으로 논문 검색
+        Arxiv에서 제목으로 논문 검색 (LangChain ArxivLoader 활용)
 
         Args:
             title: 논문 제목
             max_results: 최대 결과 수
 
         Returns:
-            Arxiv 검색 결과 리스트
+            논문 메타데이터 딕셔너리 리스트
         """
         try:
             # 제목에서 특수문자 제거하고 검색 쿼리 생성
             clean_title = re.sub(r'[^\w\s]', ' ', title)
             search_query = f'ti:"{clean_title}"'
 
-            client = arxiv.Client(
-                page_size=max_results,
-                delay_seconds=3,
-                num_retries=2
-            )
-
-            search = arxiv.Search(
+            # LangChain ArxivLoader 사용
+            loader = ArxivLoader(
                 query=search_query,
-                max_results=max_results,
-                sort_by=arxiv.SortCriterion.Relevance
+                load_max_docs=max_results
             )
 
-            results = list(client.results(search))
+            # 요약만 로드
+            docs = loader.get_summaries_as_docs()
+
+            if not docs:
+                return []
+
+            # Document 객체를 딕셔너리로 변환
+            results = []
+            for doc in docs:
+                result = {
+                    'metadata': doc.metadata,
+                    'page_content': doc.page_content,
+                    'title': doc.metadata.get('Title', ''),
+                    'authors': doc.metadata.get('Authors', []),
+                    'published': doc.metadata.get('Published', ''),
+                    'entry_id': doc.metadata.get('entry_id', ''),
+                    'summary': doc.page_content
+                }
+                results.append(result)
+
             return results
 
         except Exception as e:
             print(f"Arxiv 검색 오류 ({title[:50]}...): {str(e)}")
             return []
 
-    def download_pdf_from_arxiv(self, arxiv_result: arxiv.Result, output_dir: str, filename: str) -> str:
+    def download_pdf_from_arxiv(self, paper_dict: Dict, output_dir: str, filename: str) -> str:
         """
         Arxiv에서 PDF 다운로드
 
         Args:
-            arxiv_result: Arxiv 검색 결과
+            paper_dict: 논문 정보 딕셔너리 (search_arxiv_by_title 결과)
             output_dir: 출력 디렉토리
             filename: 저장할 파일명
 
@@ -438,7 +506,29 @@ class CitationChainAnalyzer:
                 print(f"이미 존재: {filename}")
                 return pdf_path
 
-            arxiv_result.download_pdf(dirpath=output_dir, filename=filename)
+            # ArxivLoader를 사용하여 전체 문서(PDF 내용) 로드
+            entry_id = paper_dict.get('entry_id', '')
+            if not entry_id:
+                print(f"PDF 다운로드 오류: entry_id가 없습니다")
+                return None
+
+            # Arxiv ID 추출 (URL에서)
+            arxiv_id = entry_id.split('/')[-1]
+
+            # ArxivLoader로 PDF 내용 로드
+            loader = ArxivLoader(query=arxiv_id, load_max_docs=1)
+            docs = loader.load()  # 전체 PDF 텍스트 로드
+
+            if not docs:
+                print(f"PDF 다운로드 실패: {filename}")
+                return None
+
+            # PDF 저장 (ArxivLoader는 텍스트만 제공하므로 별도 다운로드 필요)
+            # arxiv 라이브러리 직접 사용
+            import arxiv as arxiv_lib
+            paper = next(arxiv_lib.Client().results(arxiv_lib.Search(id_list=[arxiv_id])))
+            paper.download_pdf(dirpath=output_dir, filename=filename)
+
             print(f"다운로드 완료: {filename}")
             return pdf_path
 
@@ -578,11 +668,11 @@ class CitationChainAnalyzer:
                         print(f"  → Arxiv에서 찾을 수 없음")
                         continue
 
-                    paper = arxiv_results[0]
+                    paper = arxiv_results[0]  # 딕셔너리 형태
                     papers_found += 1
 
                     # PDF 다운로드
-                    arxiv_id = paper.entry_id.split('/')[-1].replace('.', '_')
+                    arxiv_id = paper['entry_id'].split('/')[-1].replace('.', '_')
                     filename = f"cited_{current_depth + 1}_{arxiv_id}.pdf"
 
                     downloaded_path = self.download_pdf_from_arxiv(paper, pdf_output_dir, filename)
@@ -591,37 +681,54 @@ class CitationChainAnalyzer:
                         next_level_pdfs.append(downloaded_path)
                         all_downloaded_pdfs.append(downloaded_path)
 
+                        # 저자 정보 처리
+                        authors = paper.get('authors', [])
+                        if isinstance(authors, list):
+                            authors_str = ', '.join(authors) if authors else 'Unknown'
+                        else:
+                            authors_str = str(authors)
+
+                        # 연도 추출 (Published 필드에서)
+                        published = paper.get('published', '')
+                        year = published.split('-')[0] if published else 'N/A'
+
                         # 메타데이터 저장
                         paper_metadata = {
-                            'title': paper.title,
-                            'authors': ', '.join([author.name for author in paper.authors]),
-                            'year': paper.published.year,
-                            'arxiv_id': paper.entry_id.split('/')[-1],
-                            'url': paper.entry_id,
+                            'title': paper.get('title', 'Unknown'),
+                            'authors': authors_str,
+                            'year': year,
+                            'arxiv_id': paper['entry_id'].split('/')[-1],
+                            'url': paper['entry_id'],
                             'pdf_path': downloaded_path,
                             'cited_by': pdf_name,
                             'depth': current_depth + 1
                         }
                         all_papers_metadata.append(paper_metadata)
 
+                        # 저자 목록 (처음 3명)
+                        authors_list = authors if isinstance(authors, list) else [authors]
+                        authors_display = ', '.join(authors_list[:3])
+                        if len(authors_list) > 3:
+                            authors_display += '...'
+
                         # 마크다운에 논문 정보 추가
                         with open(md_path, 'a', encoding='utf-8') as f:
-                            f.write(f"- **{paper.title}**\n")
-                            f.write(f"  - 저자: {', '.join([a.name for a in paper.authors[:3]])}{'...' if len(paper.authors) > 3 else ''}\n")
-                            f.write(f"  - 연도: {paper.published.year}\n")
-                            f.write(f"  - Arxiv ID: {paper.entry_id.split('/')[-1]}\n")
+                            f.write(f"- **{paper.get('title', 'Unknown')}**\n")
+                            f.write(f"  - 저자: {authors_display}\n")
+                            f.write(f"  - 연도: {year}\n")
+                            f.write(f"  - Arxiv ID: {paper['entry_id'].split('/')[-1]}\n")
                             f.write(f"  - PDF: {filename}\n\n")
 
                         # BibTeX에 추가
                         with open(bib_path, 'a', encoding='utf-8') as f:
                             bib_key = f"cited-{current_depth + 1}-{arxiv_id.replace('.', '-')}"
                             f.write(f"@article{{{bib_key},\n")
-                            f.write(f"  title = {{{paper.title}}},\n")
-                            f.write(f"  author = {{{', '.join([a.name for a in paper.authors])}}},\n")
-                            f.write(f"  year = {{{paper.published.year}}},\n")
-                            f.write(f"  eprint = {{{paper.entry_id.split('/')[-1]}}},\n")
+                            f.write(f"  title = {{{paper.get('title', 'Unknown')}}},\n")
+                            f.write(f"  author = {{{authors_str}}},\n")
+                            f.write(f"  year = {{{year}}},\n")
+                            f.write(f"  eprint = {{{paper['entry_id'].split('/')[-1]}}},\n")
                             f.write(f"  archivePrefix = {{arXiv}},\n")
-                            f.write(f"  url = {{{paper.entry_id}}},\n")
+                            f.write(f"  url = {{{paper['entry_id']}}},\n")
                             f.write(f"  note = {{Cited by: {pdf_name}, Depth: {current_depth + 1}}}\n")
                             f.write("}\n\n")
 

@@ -36,6 +36,7 @@ KLSBench 연구를 위한 학술 논문 검색 에이전트입니다. Arxiv API�
 
 -  **YAML 기반 설정 관리** - 유연한 환경 설정
 -  **다양한 LLM 모델 지원** - OpenAI, Anthropic, Perplexity
+-  **LangChain ArxivLoader 활용** - LangChain 생태계 통합, 효율적인 논문 로딩
 
 ## 프로젝트 구조
 
@@ -405,10 +406,12 @@ pip install -r requirements.txt
 
 - Python 3.8+
 - LangChain 0.3+
+  - **LangChain Community** - ArxivLoader 활용
 - OpenAI API / Anthropic API
 - Arxiv API (arxiv.py)
 - PyYAML
 - python-dotenv
+- PyMuPDF - PDF 처리
 
 ## 라이선스
 
