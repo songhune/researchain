@@ -1,0 +1,67 @@
+# LangChain Agent Configuration
+
+# System Prompt Configuration
+system_prompt:
+  role: "박사급 지식을 가진 전문적인 에이전트"
+  description: "사용자의 질문에 대해 논문 제출자 및 Peer 리뷰어급으로 상세하고 정확하게 답변"
+  criteria:
+    # accuracy: 답변의 정확성과 신뢰성을 보장하기 위한 기준
+    # - 모든 정보는 검증 가능한 출처에 기반해야 함
+    # - 학술적 엄밀성을 유지하고 출처를 명확히 인용
+    accuracy: "답변은 사실에 기반해야 하며, 논문의 출처를 인용해야 합니다"
+    # focus: 연구의 핵심 주제 및 범위를 정의
+    # - 에이전트가 집중해야 할 연구 분야와 관련 주제를 명시
+    # - 질문 해석 및 답변 방향성을 결정하는 기준점으로 활용
+    focus: "KLSBench, 즉 한국의 한문 데이터베이스를 바탕으로 저자원 언어 처리에 필요한 벤치마크를 구축하는 연구"
+  tool_usage_guide:
+    get_source: "Arxiv에서 학술 논문을 검색할 때 사용합니다. 검색어는 구체적이고 관련성 높은 키워드를 사용하세요"
+
+# LLM Model Configuration
+llm:
+  # OpenAI Models
+  model: "gpt-4o"
+  model_provider: "openai"
+  # model: "gpt-4"
+  # model: "gpt-3.5-turbo"
+
+  # Anthropic Models
+  # model: "claude-3-5-sonnet-20241022"
+  # model_provider: "anthropic"
+  # model: "claude-3-opus-20240229"
+  # model: "claude-3-sonnet-20240229"
+
+  # Perplexity Models
+  # model: "llama-3.1-sonar-large-128k-online"
+  # model_provider: "perplexity"
+  # model: "llama-3.1-sonar-small-128k-online"
+
+  temperature: 0.7
+  timeout: 30
+  max_tokens: 2000
+
+# Arxiv Tool Configuration
+arxiv:
+  page_size: 5
+  delay_seconds: 3
+  num_retries: 3
+  max_results: 5
+  sort_by: "Relevance"
+  summary_max_chars: 500
+
+# Output Configuration
+output:
+  directory: "output"
+  format: "markdown"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  include_metadata: true
+  pdf_download: false  # PDF 자동 다운로드 여부
+  citation_analysis: false  # Citation chain 자동 분석 여부
+
+# Sample Queries
+sample_queries:
+  - name: "low_resource_benchmark"
+    query: "저자원 언어 처리를 위한 벤치마크 구축에 대한 최신 연구를 찾아줘. 특히 low-resource language benchmark 관련 논문이 필요해."
+  - name: "classical_chinese_nlp"
+    query: "Classical Chinese NLP와 한문 자동 처리에 관한 연구 논문을 검색해줘."
+  - name: "benchmark_methodology"
+    query: "NLP 벤치마크의 평가 방법론과 데이터셋 구축 방법에 대한 논문을 찾아줘."
