@@ -52,8 +52,54 @@ def main():
                         help="논문 PDF 다운로드")
     parser.add_argument("--cite", type=str,
                         help="PDF 파일의 citation chain 분석 (파일 경로 또는 디렉토리)")
+    parser.add_argument("--cite-chain", type=str,
+                        help="재귀적 citation chain 분석 (파일 경로 또는 디렉토리)")
+    parser.add_argument("--depth", type=int, default=2,
+                        help="재귀 깊이 (기본값: 2)")
+    parser.add_argument("--max-papers-per-level", type=int, default=10,
+                        help="레벨당 최대 논문 수 (기본값: 10)")
+    parser.add_argument("--max-total-papers", type=int, default=50,
+                        help="전체 최대 논문 수 (기본값: 50)")
 
     args = parser.parse_args()
+
+    # 재귀적 Citation Chain 분석 모드 (별도 실행)
+    if args.cite_chain:
+        # 환경 변수 및 설정 로드
+        load_dotenv()
+        config = load_config(args.config)
+
+        analyzer = CitationChainAnalyzer(config)
+
+        # PDF 파일 목록 수집
+        pdf_files = []
+        if os.path.isfile(args.cite_chain):
+            pdf_files = [args.cite_chain]
+        elif os.path.isdir(args.cite_chain):
+            pdf_files = [os.path.join(args.cite_chain, f) for f in os.listdir(args.cite_chain) if f.endswith('.pdf')]
+        else:
+            print("유효한 파일 또는 디렉토리 경로가 아닙니다.")
+            return
+
+        if not pdf_files:
+            print("PDF 파일을 찾을 수 없습니다.")
+            return
+
+        print(f"재귀적 Citation Chain 분석 시작: {len(pdf_files)}개 PDF")
+        md_file, bib_file, all_pdfs = analyzer.recursive_citation_analysis(
+            initial_pdf_paths=pdf_files,
+            output_dir=config['output']['directory'],
+            depth=args.depth,
+            max_papers_per_level=args.max_papers_per_level,
+            max_total_papers=args.max_total_papers
+        )
+
+        print(f"\n분석 결과:")
+        print(f"  - 마크다운: {md_file}")
+        print(f"  - BibTeX: {bib_file}")
+        print(f"  - 총 PDF 수: {len(all_pdfs)}개")
+
+        return
 
     # Citation 분석 모드 (별도 실행)
     if args.cite:

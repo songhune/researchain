@@ -6,16 +6,36 @@
 
 KLSBench 연구를 위한 학술 논문 검색 에이전트입니다. Arxiv API를 활용하여 저자원 언어 처리, 한문 NLP, 벤치마크 방법론 관련 연구를 검색하고 분석합니다.
 
+**주요 특징:**
+
+-  지능형 논문 검색 및 자동 다운로드
+-  Citation chain 분석으로 관련 논문 자동 발견
+-  재귀적 논문 수집으로 연구 네트워크 확장
+-  마크다운 및 BibTeX 형식으로 결과 저장
+
 ## 주요 기능
 
-- Arxiv 학술 논문 검색
-- LangChain Agent 기반 자동 추론 및 도구 활용
-- 마크다운 형식 결과 저장 (개행 문제 해결)
-- BibTeX 형식 논문 정보 내보내기 (키워드-숫자 형식)
-- PDF 자동 다운로드
-- PDF Citation Chain 분석 (LLM 기반)
-- YAML 기반 설정 관리
-- 다양한 LLM 모델 지원 (OpenAI, Anthropic, Perplexity)
+### 기본 기능
+
+-  **Arxiv 학술 논문 검색** - 키워드 기반 논문 검색
+-  **LangChain Agent 기반 자동 추론** - 지능형 도구 활용
+-  **마크다운 형식 결과 저장** - 개행 문제 해결
+-  **BibTeX 형식 내보내기** - 키워드-숫자 형식 지원
+-  **PDF 자동 다운로드** - 논문 원본 자동 수집
+
+### 고급 기능
+
+-  **PDF Citation Chain 분석** - LLM 기반 인용 관계 분석
+-  **재귀적 Citation Chain 분석**
+  - 인용된 논문을 자동으로 Arxiv에서 검색
+  - 재귀적으로 N-depth까지 논문 수집
+  - 자동 중복 제거 및 PDF 다운로드
+  - 레벨별 수집 제한 옵션
+
+### 시스템 기능
+
+-  **YAML 기반 설정 관리** - 유연한 환경 설정
+-  **다양한 LLM 모델 지원** - OpenAI, Anthropic, Perplexity
 
 ## 프로젝트 구조
 
@@ -120,6 +140,8 @@ python main.py -s 1 -o -b -p
 
 ### Citation Chain 분석
 
+기본 Citation Chain 분석은 PDF의 참고문헌을 추출하여 분석합니다.
+
 ```bash
 # 단일 PDF 파일 분석
 python main.py --cite output/pdf/lowresource-1.pdf
@@ -127,6 +149,42 @@ python main.py --cite output/pdf/lowresource-1.pdf
 # 디렉토리 내 모든 PDF 분석
 python main.py --cite output/pdf/
 ```
+
+### 재귀적 Citation Chain 분석 (NEW!)
+
+재귀적 분석은 인용된 논문을 Arxiv에서 자동으로 검색하여 다운로드하고, 그 논문들의 인용 논문도 재귀적으로 수집합니다.
+
+```bash
+# 기본 사용 (depth 2, 최대 50개 논문)
+python main.py --cite-chain output/pdf/lowresource-1.pdf
+
+# 디렉토리 내 모든 PDF에서 재귀적 분석
+python main.py --cite-chain output/pdf/
+
+# 커스텀 설정: depth 3, 레벨당 최대 5개, 전체 최대 30개
+python main.py --cite-chain output/pdf/ --depth 3 --max-papers-per-level 5 --max-total-papers 30
+
+# 1차 인용만 수집 (depth 1)
+python main.py --cite-chain output/pdf/lowresource-1.pdf --depth 1
+```
+
+**주요 파라미터:**
+
+- `--depth N`: 재귀 깊이 설정 (기본값: 2)
+  - depth 1: 1차 인용 논문만 수집
+  - depth 2: 2차 인용 논문까지 수집 (기본값)
+  - depth 3 이상: 더 깊은 인용 체인 추적
+- `--max-papers-per-level N`: 각 레벨에서 수집할 최대 논문 수 (기본값: 10)
+- `--max-total-papers N`: 전체 수집 가능한 최대 논문 수 (기본값: 50)
+
+**작동 방식:**
+
+1. 초기 PDF에서 참고문헌 추출
+2. 각 참고문헌의 제목을 Arxiv에서 검색
+3. 찾은 논문의 PDF를 자동 다운로드
+4. 다운로드한 PDF에서 다시 참고문헌 추출 (재귀)
+5. 지정된 depth까지 반복
+6. 결과를 마크다운 및 BibTeX로 저장
 
 ### 대화형 모드
 
@@ -368,4 +426,4 @@ pip install -r requirements.txt
 
 ## 연락처
 
-KLSBench 연구팀
+songhune@ajou.ac.kr
